@@ -1,49 +1,40 @@
 #!/usr/bin/env bash
-# Build JumpBack.app — a native macOS menu-bar app.
+# Build script: compiles the SwiftPM executable and assembles JumpBack.app.
+# Usage: ./build.sh [debug|release]   (default: debug)
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD_DIR="$ROOT/build"
-APP="$BUILD_DIR/JumpBack.app"
-CONTENTS="$APP/Contents"
-MACOS="$CONTENTS/MacOS"
-BIN="$MACOS/JumpBack"
+CONFIG="${1:-debug}"
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+APP_NAME="JumpBack"
+BUNDLE_ID="arabinda.me.jumpback"
+APP="$ROOT/build/$APP_NAME.app"
 
-CONFIG="${1:-debug}" # debug | release
+echo "==> Building ($CONFIG)…"
+cd "$ROOT"
+swift build -c "$CONFIG"
 
-echo "==> Cleaning bundle"
+BIN="$(swift build -c "$CONFIG" --show-bin-path)/$APP_NAME"
+if [ ! -f "$BIN" ]; then
+	echo "Build failed: binary not found at $BIN" >&2
+	exit 1
+fi
+
+echo "==> Assembling $APP_NAME.app…"
 rm -rf "$APP"
-mkdir -p "$MACOS"
+mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/Resources"
 
-echo "==> Compiling ($CONFIG)"
-SWIFT_FLAGS=(-o "$BIN" -framework Cocoa -framework ApplicationServices -framework Carbon)
-if [[ "$CONFIG" == "release" ]]; then
-	SWIFT_FLAGS+=(-O)
-else
-	SWIFT_FLAGS+=(-g -Onone)
-fi
+cp "$BIN" "$APP/Contents/MacOS/$APP_NAME"
+cp "$ROOT/Info.plist" "$APP/Contents/Info.plist"
 
-swiftc "${SWIFT_FLAGS[@]}" "$ROOT/Sources/main.swift"
+# Icons: .icns for the app icon, template PNGs (with @2x) for the menu-bar glyph.
+[ -f "$ROOT/Resources/AppIcon.icns" ]            && cp "$ROOT/Resources/AppIcon.icns"            "$APP/Contents/Resources/"
+[ -f "$ROOT/Resources/menubarTemplate.png" ]     && cp "$ROOT/Resources/menubarTemplate.png"     "$APP/Contents/Resources/"
+[ -f "$ROOT/Resources/menubarTemplate@2x.png" ]  && cp "$ROOT/Resources/menubarTemplate@2x.png"  "$APP/Contents/Resources/"
 
-# Keep debug symbols in build/ rather than inside the .app bundle.
-if [[ -d "$BIN.dSYM" ]]; then
-	rm -rf "$BUILD_DIR/JumpBack.dSYM"
-	mv "$BIN.dSYM" "$BUILD_DIR/JumpBack.dSYM"
-fi
+# Ad-hoc code sign with a stable identity so the Accessibility permission
+# grant persists across rebuilds.
+echo "==> Ad-hoc code signing…"
+codesign --force --sign - --identifier "$BUNDLE_ID" "$APP" >/dev/null 2>&1 || echo "   (codesign skipped)"
 
-echo "==> Assembling bundle"
-cp "$ROOT/Info.plist" "$CONTENTS/Info.plist"
-
-# Bundle icons: .icns for the app icon, template PNGs for the menu-bar glyph.
-RESOURCES="$CONTENTS/Resources"
-mkdir -p "$RESOURCES"
-cp "$ROOT/Resources/AppIcon.icns" "$RESOURCES/AppIcon.icns"
-cp "$ROOT/Resources/menubarTemplate.png" "$RESOURCES/menubarTemplate.png"
-cp "$ROOT/Resources/menubarTemplate@2x.png" "$RESOURCES/menubarTemplate@2x.png"
-
-# Ad-hoc code sign so the Accessibility permission grant sticks across rebuilds
-# with a stable bundle identity.
-echo "==> Code signing (ad-hoc)"
-codesign --force --sign - --identifier "com.theleadershipthread.jumpback" "$APP"
-
-echo "==> Built: $APP"
+echo "==> Done: $APP"

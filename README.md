@@ -10,12 +10,15 @@ Press it again to toggle back.
 
 ## Build
 
+A Swift Package Manager project (`Package.swift`). Build the raw executable with
+`swift build`, or assemble the full `.app` bundle with the build script:
+
 ```sh
 ./build.sh            # debug build  -> build/JumpBack.app
 ./build.sh release    # optimized build
 ```
 
-Requires the Xcode command-line tools (`swiftc`). No third-party dependencies.
+Requires the Xcode command-line tools (`swift`). No third-party dependencies.
 
 ### Icon
 
@@ -48,13 +51,18 @@ The app polls once per second and activates the hotkey automatically the moment 
 permission is granted (no relaunch needed). The build is ad-hoc code-signed with a
 stable identity so the grant persists across rebuilds.
 
-## Develop / debug in VSCode
+## Develop / debug in VSCode / Cursor
 
-- **Build:** `⌘⇧B` (runs the `build-debug` task).
-- **Run:** Terminal → Run Task → `run` (or `open-app`).
-- **Debug:** Run and Debug → **Debug JumpBack** (uses the
-  [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb)
-  extension, `type: lldb`). Install CodeLLDB if you don't have it.
+- **Build:** `⌘⇧B` (runs the `Build JumpBack (swift)` task).
+- **Run:** Terminal → Run Task → `Run JumpBack.app`.
+- **Debug:** Run and Debug → **Debug JumpBack (.app)**. This uses the `lldb-dap`
+  extension (`llvm-vs-code-extensions.lldb-dap`); the adapter path is pinned to
+  Xcode's `lldb-dap` in [.vscode/settings.json](.vscode/settings.json). A
+  **Debug JumpBack (CodeLLDB)** config is also provided as a self-contained fallback
+  (needs the `vadimcn.vscode-lldb` extension).
+
+> Reload the editor window (`Developer: Reload Window`) after installing a debug
+> extension so the new debug type is recognized.
 
 ## How it works
 

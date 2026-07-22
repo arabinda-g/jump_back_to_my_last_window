@@ -2,13 +2,31 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug JumpBack",
-      "type": "lldb",
+      "type": "lldb-dap",
       "request": "launch",
+      "name": "Debug JumpBack (.app)",
       "program": "${workspaceFolder}/build/JumpBack.app/Contents/MacOS/JumpBack",
       "args": [],
       "cwd": "${workspaceFolder}",
-      "preLaunchTask": "build-debug"
+      "preLaunchTask": "Build JumpBack.app (debug)"
+    },
+    {
+      "type": "lldb-dap",
+      "request": "launch",
+      "name": "Release JumpBack (.app)",
+      "program": "${workspaceFolder}/build/JumpBack.app/Contents/MacOS/JumpBack",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "Build JumpBack.app (release)"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug JumpBack (CodeLLDB)",
+      "program": "${workspaceFolder}/build/JumpBack.app/Contents/MacOS/JumpBack",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "Build JumpBack.app (debug)"
     }
   ]
 }
