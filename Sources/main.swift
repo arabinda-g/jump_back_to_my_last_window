@@ -36,9 +36,8 @@ final class AppSwitcher {
     private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = item.button {
-            if let image = NSImage(systemSymbolName: "arrow.uturn.backward.square",
-                                   accessibilityDescription: "Jump Back") {
-                image.isTemplate = true
+            if let image = menuBarImage() {
+                image.isTemplate = true // adapt to light/dark menu bar automatically
                 button.image = image
             } else {
                 button.title = "⤾"
@@ -67,6 +66,17 @@ final class AppSwitcher {
 
         item.menu = menu
         statusItem = item
+    }
+
+    /// The custom menu-bar glyph, bundled as a template PNG (with @2x). Falls
+    /// back to the matching SF Symbol if the resource is missing.
+    private func menuBarImage() -> NSImage? {
+        if let image = NSImage(named: NSImage.Name("menubarTemplate")) {
+            image.size = NSSize(width: 18, height: 18)
+            return image
+        }
+        return NSImage(systemSymbolName: "arrow.uturn.backward.circle",
+                       accessibilityDescription: "Jump Back")
     }
 
     @objc private func openAccessibilitySettings() {

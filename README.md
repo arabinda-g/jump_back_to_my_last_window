@@ -17,6 +17,18 @@ Press it again to toggle back.
 
 Requires the Xcode command-line tools (`swiftc`). No third-party dependencies.
 
+### Icon
+
+The app icon (`Resources/AppIcon.icns`) and the menu-bar template glyph
+(`Resources/menubarTemplate*.png`) are checked in and copied into the bundle by
+`build.sh`. To regenerate them (requires Python + Pillow):
+
+```sh
+python3 tools/make_icon.py --out Resources
+iconutil -c icns Resources/AppIcon.iconset -o Resources/AppIcon.icns
+rm -rf Resources/AppIcon.iconset
+```
+
 ## Run
 
 ```sh
