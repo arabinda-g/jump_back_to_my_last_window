@@ -1,0 +1,37 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build-debug",
+      "type": "shell",
+      "command": "${workspaceFolder}/build.sh debug",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$swiftc"],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      "label": "build-release",
+      "type": "shell",
+      "command": "${workspaceFolder}/build.sh release",
+      "group": "build",
+      "problemMatcher": ["$swiftc"],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      "label": "run",
+      "type": "shell",
+      "command": "${workspaceFolder}/build/JumpBack.app/Contents/MacOS/JumpBack",
+      "dependsOn": "build-debug",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      "label": "open-app",
+      "type": "shell",
+      "command": "open ${workspaceFolder}/build/JumpBack.app",
+      "dependsOn": "build-debug",
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent", "panel": "shared" }
+    }
+  ]
+}
