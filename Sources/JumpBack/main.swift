@@ -5,6 +5,14 @@ import Carbon.HIToolbox
 // Keycode for the ` / ~ key on an ANSI keyboard.
 private let kTildeKeyCode: Int64 = Int64(kVK_ANSI_Grave) // 50
 
+/// UserDefaults key for whether the menu-bar icon is shown.
+private let kShowMenuBarIconKey = "ShowMenuBarIcon"
+
+/// Posted (cross-process) by a second launch to ask the running instance to
+/// reveal its settings window. Used when the menu-bar icon is hidden and the
+/// only way back in is to launch the app again.
+private let kOpenSettingsNotification = Notification.Name("arabinda.me.jumpback.openSettings")
+
 /// A focused window we've seen, identified by its owning process and its
 /// Accessibility element. Two references to the same on-screen window compare
 /// equal via `CFEqual` on the elements.
@@ -26,13 +34,30 @@ final class AppSwitcher {
 
     private var statusItem: NSStatusItem?
     private var eventTap: CFMachPort?
+    private var settingsWindowController: SettingsWindowController?
 
     private var ownBundleID: String? { Bundle.main.bundleIdentifier }
     private var ownPID: pid_t { ProcessInfo.processInfo.processIdentifier }
 
+    /// Whether the menu-bar icon is shown. Defaults to `true` on first launch.
+    var showMenuBarIcon: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: kShowMenuBarIconKey) == nil { return true }
+            return UserDefaults.standard.bool(forKey: kShowMenuBarIconKey)
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: kShowMenuBarIconKey)
+            updateStatusItemVisibility()
+        }
+    }
+
     func start() {
-        setupStatusItem()
+        updateStatusItemVisibility()
         startWindowTracking()
+
+        // If the icon starts hidden, there's no obvious entry point, so surface
+        // the settings window once at launch.
+        if !showMenuBarIcon { showSettings() }
 
         if ensureAccessibilityPermission() {
             installEventTap()
@@ -43,6 +68,33 @@ final class AppSwitcher {
     }
 
     // MARK: - Menu bar
+
+    /// Create or tear down the status item to match `showMenuBarIcon`.
+    private func updateStatusItemVisibility() {
+        if showMenuBarIcon {
+            if statusItem == nil { setupStatusItem() }
+        } else if let item = statusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            statusItem = nil
+        }
+    }
+
+    // MARK: - Settings window
+
+    /// Show (creating if needed) the settings window and bring the app forward.
+    func showSettings() {
+        if settingsWindowController == nil {
+            settingsWindowController = SettingsWindowController()
+        }
+        settingsWindowController?.syncFromSettings()
+        NSApp.activate(ignoringOtherApps: true)
+        settingsWindowController?.showWindow(nil)
+        settingsWindowController?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func openSettings() {
+        showSettings()
+    }
 
     private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -67,6 +119,9 @@ final class AppSwitcher {
                                 action: #selector(openAccessibilitySettings),
                                 keyEquivalent: ""))
         menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Settings…",
+                                action: #selector(openSettings),
+                                keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "Quit",
                                 action: #selector(NSApplication.terminate(_:)),
                                 keyEquivalent: "q"))
@@ -264,6 +319,83 @@ final class AppSwitcher {
     }
 }
 
+// MARK: - Settings window
+
+/// A small settings window: toggle the menu-bar icon and quit the app.
+final class SettingsWindowController: NSWindowController {
+    private var iconCheckbox: NSButton!
+
+    convenience init() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 190),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Jump Back Settings"
+        window.isReleasedWhenClosed = false
+        window.center()
+        self.init(window: window)
+        buildContent()
+    }
+
+    private func buildContent() {
+        guard let content = window?.contentView else { return }
+
+        let title = NSTextField(labelWithString: "Jump Back to My Last Window")
+        title.font = .boldSystemFont(ofSize: 15)
+        title.translatesAutoresizingMaskIntoConstraints = false
+
+        let checkbox = NSButton(checkboxWithTitle: "Show menu-bar icon",
+                                target: self,
+                                action: #selector(toggleIcon(_:)))
+        checkbox.state = AppSwitcher.shared.showMenuBarIcon ? .on : .off
+        checkbox.translatesAutoresizingMaskIntoConstraints = false
+        iconCheckbox = checkbox
+
+        let hint = NSTextField(wrappingLabelWithString:
+            "When the icon is hidden, launch Jump Back again to reopen this window.")
+        hint.font = .systemFont(ofSize: 11)
+        hint.textColor = .secondaryLabelColor
+        hint.translatesAutoresizingMaskIntoConstraints = false
+
+        let quit = NSButton(title: "Quit Jump Back", target: NSApp, action: #selector(NSApplication.terminate(_:)))
+        quit.bezelStyle = .rounded
+        quit.keyEquivalent = "q"
+        quit.translatesAutoresizingMaskIntoConstraints = false
+
+        content.addSubview(title)
+        content.addSubview(checkbox)
+        content.addSubview(hint)
+        content.addSubview(quit)
+
+        NSLayoutConstraint.activate([
+            title.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
+            title.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
+            title.topAnchor.constraint(equalTo: content.topAnchor, constant: 20),
+
+            checkbox.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
+            checkbox.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 18),
+
+            hint.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
+            hint.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
+            hint.topAnchor.constraint(equalTo: checkbox.bottomAnchor, constant: 6),
+
+            quit.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
+            quit.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -20),
+        ])
+    }
+
+    @objc private func toggleIcon(_ sender: NSButton) {
+        AppSwitcher.shared.showMenuBarIcon = (sender.state == .on)
+    }
+
+    /// Refresh the checkbox in case the setting changed elsewhere.
+    func syncFromSettings() {
+        iconCheckbox?.state = AppSwitcher.shared.showMenuBarIcon ? .on : .off
+    }
+}
+
 // MARK: - Entry point
 
 let app = NSApplication.shared
@@ -275,6 +407,37 @@ app.run()
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Single-instance guard: if another copy is already running, ask it to
+        // reveal its settings window (the icon may be hidden) and then bow out.
+        if let bundleID = Bundle.main.bundleIdentifier {
+            let others = NSRunningApplication
+                .runningApplications(withBundleIdentifier: bundleID)
+                .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
+            if !others.isEmpty {
+                DistributedNotificationCenter.default().postNotificationName(
+                    kOpenSettingsNotification, object: nil, userInfo: nil, deliverImmediately: true)
+                NSApp.terminate(nil)
+                return
+            }
+        }
+
+        // Listen for future launches asking us to open settings.
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(handleOpenSettingsNotification),
+            name: kOpenSettingsNotification,
+            object: nil)
+
         AppSwitcher.shared.start()
+    }
+
+    @objc private func handleOpenSettingsNotification() {
+        AppSwitcher.shared.showSettings()
+    }
+
+    // Fires when the app is relaunched from Finder/Dock while already running.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        AppSwitcher.shared.showSettings()
+        return true
     }
 }
