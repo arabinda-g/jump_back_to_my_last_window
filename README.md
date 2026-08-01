@@ -38,7 +38,17 @@ rm -rf Resources/AppIcon.iconset
 open build/JumpBack.app
 ```
 
-A ⤾ icon appears in the menu bar. Use its menu to open Accessibility settings or quit.
+A ⤾ icon appears in the menu bar. Use its menu to open Accessibility settings, open
+**Settings…**, or quit.
+
+### Settings
+
+- **Show menu-bar icon** — hide the ⤾ glyph to run completely invisibly. With the icon
+  hidden, launching Jump Back again reopens the settings window.
+- **Launch at login** — registers the app with macOS (`SMAppService`, listed under
+  **System Settings → General → Login Items**). A login launch starts Jump Back
+  *silently*: no settings window and no permission prompt, just the hotkey running in
+  the background. Launching it yourself still opens the window as usual.
 
 ### Accessibility permission (required)
 
@@ -72,6 +82,10 @@ stable identity so the grant persists across rebuilds.
   A **bare** press is swallowed and triggers the switch; `Shift+`` ` `` (~) and
   `Cmd+`` ` `` (window cycling) are passed through untouched.
 - `previousApp.activate(...)` brings the last app (and its focused window) forward.
+- Login launches are told apart from user launches by the `keyAELaunchedAsLogInItem`
+  flag macOS sets on the open-application Apple event (read in
+  `applicationDidFinishLaunching` — the event isn't dispatched yet in
+  `applicationWillFinishLaunching`). That flag is what keeps a login start silent.
 
 > Note: because a bare `` ` `` press is intercepted app-wide, you can't type a literal
 > backtick while JumpBack is running. The tilde character (`Shift+`` ` ``) still works.

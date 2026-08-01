@@ -1,6 +1,8 @@
 import Cocoa
 import ApplicationServices
 import Carbon.HIToolbox
+import CoreServices
+import ServiceManagement
 
 // Keycode for the ` / ~ key on an ANSI keyboard.
 private let kTildeKeyCode: Int64 = Int64(kVK_ANSI_Grave) // 50
@@ -51,20 +53,51 @@ final class AppSwitcher {
         }
     }
 
-    func start() {
+    /// - Parameter silently: `true` when macOS launched us at login. A login
+    ///   launch shows nothing at all: no settings window, and no Accessibility
+    ///   prompt (the grant persists across reboots, so it should already be in
+    ///   place; if it isn't we wait for it quietly instead of interrupting).
+    func start(silently: Bool = false) {
         updateStatusItemVisibility()
         startWindowTracking()
 
         // If the icon starts hidden, there's no obvious entry point, so surface
-        // the settings window once at launch.
-        if !showMenuBarIcon { showSettings() }
+        // the settings window once at launch — unless this is a login launch.
+        if !showMenuBarIcon && !silently { showSettings() }
 
-        if ensureAccessibilityPermission() {
+        if silently {
+            if AXIsProcessTrusted() { installEventTap() } else { waitForAccessibilityThenInstall() }
+        } else if ensureAccessibilityPermission() {
             installEventTap()
         } else {
             // Permission not granted yet. Poll until the user grants it, then install the tap.
             waitForAccessibilityThenInstall()
         }
+    }
+
+    // MARK: - Launch at login
+
+    /// Login-item registration state, as macOS sees it. `.requiresApproval`
+    /// means we're registered but the user switched us off in System Settings.
+    var launchAtLoginStatus: SMAppService.Status { SMAppService.mainApp.status }
+
+    /// Register or unregister the app as a login item.
+    func setLaunchAtLogin(_ enabled: Bool) {
+        let service = SMAppService.mainApp
+        do {
+            if enabled {
+                // Registering an already-enabled service throws, so skip it.
+                if service.status != .enabled { try service.register() }
+            } else if service.status != .notRegistered {
+                try service.unregister()
+            }
+        } catch {
+            NSLog("JumpBack: launch at login \(enabled ? "register" : "unregister") failed: \(error.localizedDescription)")
+        }
+    }
+
+    func openLoginItemsSettings() {
+        SMAppService.openSystemSettingsLoginItems()
     }
 
     // MARK: - Menu bar
@@ -321,13 +354,16 @@ final class AppSwitcher {
 
 // MARK: - Settings window
 
-/// A small settings window: toggle the menu-bar icon and quit the app.
+/// A small settings window: toggle the menu-bar icon and launch at login, and
+/// quit the app.
 final class SettingsWindowController: NSWindowController {
     private var iconCheckbox: NSButton!
+    private var loginCheckbox: NSButton!
+    private var loginHint: NSTextField!
 
     convenience init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 190),
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 260),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -359,6 +395,18 @@ final class SettingsWindowController: NSWindowController {
         hint.textColor = .secondaryLabelColor
         hint.translatesAutoresizingMaskIntoConstraints = false
 
+        let login = NSButton(checkboxWithTitle: "Launch at login",
+                             target: self,
+                             action: #selector(toggleLaunchAtLogin(_:)))
+        login.translatesAutoresizingMaskIntoConstraints = false
+        loginCheckbox = login
+
+        let loginHint = NSTextField(wrappingLabelWithString: "")
+        loginHint.font = .systemFont(ofSize: 11)
+        loginHint.textColor = .secondaryLabelColor
+        loginHint.translatesAutoresizingMaskIntoConstraints = false
+        self.loginHint = loginHint
+
         let quit = NSButton(title: "Quit Jump Back", target: NSApp, action: #selector(NSApplication.terminate(_:)))
         quit.bezelStyle = .rounded
         quit.keyEquivalent = "q"
@@ -367,6 +415,8 @@ final class SettingsWindowController: NSWindowController {
         content.addSubview(title)
         content.addSubview(checkbox)
         content.addSubview(hint)
+        content.addSubview(login)
+        content.addSubview(loginHint)
         content.addSubview(quit)
 
         NSLayoutConstraint.activate([
@@ -381,18 +431,52 @@ final class SettingsWindowController: NSWindowController {
             hint.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
             hint.topAnchor.constraint(equalTo: checkbox.bottomAnchor, constant: 6),
 
+            login.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
+            login.topAnchor.constraint(equalTo: hint.bottomAnchor, constant: 16),
+
+            loginHint.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
+            loginHint.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
+            loginHint.topAnchor.constraint(equalTo: login.bottomAnchor, constant: 6),
+
             quit.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
             quit.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -20),
+            quit.topAnchor.constraint(greaterThanOrEqualTo: loginHint.bottomAnchor, constant: 16),
         ])
+
+        refreshLaunchAtLogin()
     }
 
     @objc private func toggleIcon(_ sender: NSButton) {
         AppSwitcher.shared.showMenuBarIcon = (sender.state == .on)
     }
 
-    /// Refresh the checkbox in case the setting changed elsewhere.
+    @objc private func toggleLaunchAtLogin(_ sender: NSButton) {
+        let enabling = sender.state == .on
+        AppSwitcher.shared.setLaunchAtLogin(enabling)
+        refreshLaunchAtLogin()
+
+        // macOS won't re-enable an item the user switched off in System
+        // Settings — send them there rather than leaving the toggle stuck.
+        if enabling && AppSwitcher.shared.launchAtLoginStatus == .requiresApproval {
+            AppSwitcher.shared.openLoginItemsSettings()
+        }
+    }
+
+    /// Mirror the login-item state macOS actually reports, which can differ
+    /// from what was just clicked (approval pending, or changed in System
+    /// Settings while we weren't looking).
+    private func refreshLaunchAtLogin() {
+        let status = AppSwitcher.shared.launchAtLoginStatus
+        loginCheckbox?.state = (status == .enabled || status == .requiresApproval) ? .on : .off
+        loginHint?.stringValue = status == .requiresApproval
+            ? "Waiting for approval — enable Jump Back in System Settings › General › Login Items."
+            : "Starts Jump Back silently in the background when you log in — no window."
+    }
+
+    /// Refresh the checkboxes in case the settings changed elsewhere.
     func syncFromSettings() {
         iconCheckbox?.state = AppSwitcher.shared.showMenuBarIcon ? .on : .off
+        refreshLaunchAtLogin()
     }
 }
 
@@ -406,7 +490,26 @@ app.delegate = delegate
 app.run()
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Whether macOS started us as a login item rather than the user opening
+    /// the app. Captured during launch, while the open-application Apple event
+    /// that carries the flag is still the current event.
+    private var launchedAtLogin = false
+
+    /// macOS marks the `kAEOpenApplication` event it sends to login items with
+    /// `keyAELaunchedAsLogInItem`; a user-initiated open carries no such flag.
+    private static func isLoginItemLaunch() -> Bool {
+        guard let event = NSAppleEventManager.shared().currentAppleEvent,
+              event.eventID == AEEventID(kAEOpenApplication) else { return false }
+        let flag = event.paramDescriptor(forKeyword: AEKeyword(keyAEPropData))
+        return flag?.enumCodeValue == OSType(keyAELaunchedAsLogInItem)
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Checked here, not in `willFinishLaunching`: the open-application
+        // event is only dispatched between the two callbacks.
+        launchedAtLogin = Self.isLoginItemLaunch()
+        NSLog("JumpBack: launched \(launchedAtLogin ? "at login — starting silently" : "by user").")
+
         // Single-instance guard: if another copy is already running, ask it to
         // reveal its settings window (the icon may be hidden) and then bow out.
         if let bundleID = Bundle.main.bundleIdentifier {
@@ -428,7 +531,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: kOpenSettingsNotification,
             object: nil)
 
-        AppSwitcher.shared.start()
+        AppSwitcher.shared.start(silently: launchedAtLogin)
     }
 
     @objc private func handleOpenSettingsNotification() {
