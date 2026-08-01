@@ -32,9 +32,17 @@ cp "$ROOT/Info.plist" "$APP/Contents/Info.plist"
 [ -f "$ROOT/Resources/menubarTemplate.png" ]     && cp "$ROOT/Resources/menubarTemplate.png"     "$APP/Contents/Resources/"
 [ -f "$ROOT/Resources/menubarTemplate@2x.png" ]  && cp "$ROOT/Resources/menubarTemplate@2x.png"  "$APP/Contents/Resources/"
 
-# Ad-hoc code sign with a stable identity so the Accessibility permission
-# grant persists across rebuilds.
-echo "==> Ad-hoc code signing…"
-codesign --force --sign - --identifier "$BUNDLE_ID" "$APP" >/dev/null 2>&1 || echo "   (codesign skipped)"
+# Sign with a stable local identity so the Accessibility permission grant
+# persists across rebuilds. Ad-hoc signing would change the code identity
+# every build, causing macOS to revoke the TCC grant.
+SIGN_ID="${CODESIGN_IDENTITY:-me.arabinda.codesign}"
+echo "==> Code signing as '$SIGN_ID'…"
+if security find-identity -v -p codesigning | grep -q "$SIGN_ID"; then
+	codesign --force --options runtime --sign "$SIGN_ID" --identifier "$BUNDLE_ID" "$APP"
+else
+	echo "   Identity '$SIGN_ID' not found in keychain — falling back to ad-hoc." >&2
+	echo "   (Accessibility permission will need re-granting after each rebuild.)" >&2
+	codesign --force --sign - --identifier "$BUNDLE_ID" "$APP"
+fi
 
 echo "==> Done: $APP"

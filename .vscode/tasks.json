@@ -6,7 +6,7 @@
       "type": "shell",
       "command": "swift build",
       "options": { "cwd": "${workspaceFolder}" },
-      "group": { "kind": "build", "isDefault": true },
+      "group": "build",
       "problemMatcher": ["$swiftc"]
     },
     {
@@ -22,16 +22,25 @@
       "type": "shell",
       "command": "./build.sh release",
       "options": { "cwd": "${workspaceFolder}" },
-      "group": "build",
+      "group": { "kind": "build", "isDefault": true },
       "problemMatcher": ["$swiftc"]
     },
     {
-      "label": "Run JumpBack.app",
+      "label": "Run JumpBack.app (debug)",
       "type": "shell",
-      "command": "open build/JumpBack.app",
+      "command": "pkill -x JumpBack || true; open build/JumpBack.app",
       "options": { "cwd": "${workspaceFolder}" },
       "dependsOn": "Build JumpBack.app (debug)",
       "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run JumpBack.app (release)",
+      "type": "shell",
+      "command": "pkill -x JumpBack || true; open build/JumpBack.app",
+      "options": { "cwd": "${workspaceFolder}" },
+      "dependsOn": "Build JumpBack.app (release)",
+      "group": "test",
       "problemMatcher": []
     }
   ]
