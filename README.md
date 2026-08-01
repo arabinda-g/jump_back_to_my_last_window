@@ -8,14 +8,32 @@ Press it again to toggle back.
 - Global hotkey: the bare **`` ` ``** key.
 - Works system-wide against every application.
 
+## Install
+
+Download the latest `JumpBack-<version>.dmg` (or the `.zip`) from the
+[Releases page](https://github.com/arabinda-g/jump_back_to_my_last_window/releases/latest),
+open it, and drag **JumpBack.app** into **Applications**. Universal binary
+(Apple Silicon + Intel), macOS 13 or later.
+
+The app is signed with a self-signed local certificate, **not** a Developer ID, so it
+isn't notarized and Gatekeeper will block it on first open. Either right-click the app
+→ **Open** → **Open**, or clear the quarantine flag:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/JumpBack.app
+```
+
+Then grant Accessibility permission (see below) — the hotkey does not work without it.
+
 ## Build
 
 A Swift Package Manager project (`Package.swift`). Build the raw executable with
 `swift build`, or assemble the full `.app` bundle with the build script:
 
 ```sh
-./build.sh            # debug build  -> build/JumpBack.app
-./build.sh release    # optimized build
+./build.sh                      # debug build  -> build/JumpBack.app
+./build.sh release              # optimized build, host architecture
+./build.sh release universal    # optimized fat arm64 + x86_64 build (release artifacts)
 ```
 
 Requires the Xcode command-line tools (`swift`). No third-party dependencies.
@@ -58,8 +76,9 @@ permission. On first launch you'll be prompted; grant it under:
 **System Settings → Privacy & Security → Accessibility** → enable **JumpBack**.
 
 The app polls once per second and activates the hotkey automatically the moment the
-permission is granted (no relaunch needed). The build is ad-hoc code-signed with a
-stable identity so the grant persists across rebuilds.
+permission is granted (no relaunch needed). Builds are signed with a stable code-signing
+identity rather than ad-hoc, so the grant survives rebuilds and upgrades instead of being
+revoked every time the binary changes.
 
 ## Develop / debug in VSCode / Cursor
 

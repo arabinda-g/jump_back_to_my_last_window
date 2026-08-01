@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Build script: compiles the SwiftPM executable and assembles JumpBack.app.
-# Usage: ./build.sh [debug|release]   (default: debug)
+# Usage: ./build.sh [debug|release] [universal]   (default: debug, host arch)
+#   universal -> builds a fat arm64 + x86_64 binary (used for distribution).
 set -euo pipefail
 
 CONFIG="${1:-debug}"
@@ -9,11 +10,20 @@ APP_NAME="JumpBack"
 BUNDLE_ID="arabinda.me.jumpback"
 APP="$ROOT/build/$APP_NAME.app"
 
-echo "==> Building ($CONFIG)…"
-cd "$ROOT"
-swift build -c "$CONFIG"
+# Note: bash 3.2 (macOS system bash) errors on "${arr[@]}" for an empty array
+# under `set -u`, so expand via the ${arr[@]+…} guard everywhere below.
+ARCH_FLAGS=()
+if [ "${2:-}" = "universal" ]; then
+	ARCH_FLAGS=(--arch arm64 --arch x86_64)
+	echo "==> Building ($CONFIG, universal arm64+x86_64)…"
+else
+	echo "==> Building ($CONFIG)…"
+fi
 
-BIN="$(swift build -c "$CONFIG" --show-bin-path)/$APP_NAME"
+cd "$ROOT"
+swift build -c "$CONFIG" ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"}
+
+BIN="$(swift build -c "$CONFIG" ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"} --show-bin-path)/$APP_NAME"
 if [ ! -f "$BIN" ]; then
 	echo "Build failed: binary not found at $BIN" >&2
 	exit 1
